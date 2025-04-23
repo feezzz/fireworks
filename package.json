@@ -1,0 +1,11 @@
+{
+  "name": "fireworks-display",
+  "version": "1.0.0",
+  "description": "绚丽的网页烟花效果",
+  "scripts": {
+    "start": "serve"
+  },
+  "dependencies": {
+    "serve": "^14.2.1"
+  }
+} 
