@@ -5,7 +5,7 @@ const ctx = canvas.getContext('2d');
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
 // 创建爆炸声音
-function createExplosionSound() {
+function createExplosionSound(frequency = 150) {
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
     
@@ -13,7 +13,7 @@ function createExplosionSound() {
     gainNode.connect(audioContext.destination);
     
     oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
+    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
     oscillator.frequency.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
     
     gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
@@ -40,25 +40,44 @@ function createGlow(ctx, x, y, radius, color) {
     return gradient;
 }
 
+// 烟花类型
+const FIREWORK_TYPES = {
+    NORMAL: 'normal',
+    RING: 'ring',
+    SPIRAL: 'spiral',
+    HEART: 'heart',
+    STAR: 'star',
+    DOUBLE: 'double',
+    RANDOM: 'random'
+};
+
 // 烟花粒子类
 class Particle {
-    constructor(x, y, color, shape = 'circle') {
+    constructor(x, y, color, shape = 'circle', type = FIREWORK_TYPES.NORMAL) {
         this.x = x;
         this.y = y;
         this.color = color;
         this.shape = shape;
+        this.type = type;
         this.velocity = {
             x: (Math.random() - 0.5) * 8,
             y: (Math.random() - 0.5) * 8
         };
         this.alpha = 1;
-        this.decay = Math.random() * 0.008 + 0.008; // 降低衰减速度
+        this.decay = Math.random() * 0.006 + 0.006; // 降低衰减速度
         this.size = Math.random() * 4 + 2;
         this.trail = [];
         this.maxTrailLength = 5;
         this.angle = Math.random() * Math.PI * 2;
         this.spinSpeed = (Math.random() - 0.5) * 0.2;
         this.glowRadius = this.size * 6;
+        
+        // 特殊效果的额外属性
+        if (type === FIREWORK_TYPES.SPIRAL) {
+            this.spiralRadius = Math.random() * 50 + 20;
+            this.spiralAngle = Math.random() * Math.PI * 2;
+            this.spiralSpeed = Math.random() * 0.1 + 0.05;
+        }
     }
 
     draw() {
@@ -105,6 +124,36 @@ class Particle {
         ctx.restore();
     }
 
+    update() {
+        this.angle += this.spinSpeed;
+        
+        // 特殊效果的运动更新
+        if (this.type === FIREWORK_TYPES.SPIRAL) {
+            this.spiralAngle += this.spiralSpeed;
+            this.x += Math.cos(this.spiralAngle) * this.spiralRadius * 0.1;
+            this.y += Math.sin(this.spiralAngle) * this.spiralRadius * 0.1;
+            this.spiralRadius *= 0.99; // 逐渐减小半径
+        } else {
+            this.x += this.velocity.x;
+            this.y += this.velocity.y;
+        }
+
+        // 添加当前位置到尾迹
+        this.trail.push({x: this.x, y: this.y});
+        if (this.trail.length > this.maxTrailLength) {
+            this.trail.shift();
+        }
+
+        this.velocity.y += 0.04; // 降低重力
+        this.alpha -= this.decay;
+
+        // 特殊类型的额外更新
+        if (this.type === FIREWORK_TYPES.RING) {
+            this.velocity.x *= 0.98;
+            this.velocity.y *= 0.98;
+        }
+    }
+
     drawStar(x, y, size, angle) {
         const spikes = 5;
         const rotation = angle;
@@ -132,25 +181,21 @@ class Particle {
         ctx.beginPath();
         const topCurveHeight = size * 0.3;
         ctx.moveTo(x, y + topCurveHeight);
-        // 左曲线
         ctx.bezierCurveTo(
             x, y, 
             x - size, y, 
             x - size, y + topCurveHeight
         );
-        // 左底部
         ctx.bezierCurveTo(
             x - size, y + (size + topCurveHeight) / 2, 
             x, y + size, 
             x, y + size
         );
-        // 右底部
         ctx.bezierCurveTo(
             x, y + size, 
             x + size, y + (size + topCurveHeight) / 2, 
             x + size, y + topCurveHeight
         );
-        // 右曲线
         ctx.bezierCurveTo(
             x + size, y, 
             x, y, 
@@ -159,41 +204,28 @@ class Particle {
         ctx.closePath();
         ctx.restore();
     }
-
-    update() {
-        this.angle += this.spinSpeed;
-        
-        // 添加当前位置到尾迹
-        this.trail.push({x: this.x, y: this.y});
-        if (this.trail.length > this.maxTrailLength) {
-            this.trail.shift();
-        }
-
-        this.velocity.y += 0.05; // 降低重力
-        this.x += this.velocity.x;
-        this.y += this.velocity.y;
-        this.alpha -= this.decay;
-    }
 }
 
 // 创建烟花
 class Firework {
-    constructor(x, y, targetX, targetY, color) {
+    constructor(x, y, targetX, targetY, color, type = FIREWORK_TYPES.NORMAL) {
         this.x = x;
         this.y = y;
         this.targetX = targetX;
         this.targetY = targetY;
         this.color = color;
+        this.type = type;
         this.particles = [];
-        this.speed = 8; // 降低发射速度
+        this.speed = 8;
         this.angle = Math.atan2(targetY - y, targetX - x);
         this.velocity = {
             x: Math.cos(this.angle) * this.speed,
             y: Math.sin(this.angle) * this.speed
         };
         this.trail = [];
-        this.maxTrailLength = 15; // 增加尾迹长度
+        this.maxTrailLength = 15;
         this.glowRadius = 8;
+        this.hasExploded = false;
     }
 
     draw() {
@@ -236,11 +268,11 @@ class Firework {
     }
 
     explode() {
-        createExplosionSound();
+        createExplosionSound(this.type === FIREWORK_TYPES.DOUBLE ? 200 : 150);
         
         const shapes = ['circle', 'star', 'heart'];
         const shape = shapes[Math.floor(Math.random() * shapes.length)];
-        const particleCount = Math.floor(Math.random() * 50) + 100;
+        let particleCount = Math.floor(Math.random() * 50) + 100;
 
         // 创建爆炸闪光
         ctx.save();
@@ -251,8 +283,59 @@ class Firework {
         ctx.fill();
         ctx.restore();
 
+        // 根据烟花类型创建不同的爆炸效果
+        switch(this.type) {
+            case FIREWORK_TYPES.RING:
+                this.createRingExplosion(shape);
+                break;
+            case FIREWORK_TYPES.SPIRAL:
+                this.createSpiralExplosion();
+                break;
+            case FIREWORK_TYPES.DOUBLE:
+                this.createDoubleExplosion(shape);
+                break;
+            case FIREWORK_TYPES.RANDOM:
+                const types = Object.values(FIREWORK_TYPES);
+                const randomType = types[Math.floor(Math.random() * types.length)];
+                this.type = randomType;
+                this.explode();
+                break;
+            default:
+                for (let i = 0; i < particleCount; i++) {
+                    particles.push(new Particle(this.x, this.y, this.color, shape, this.type));
+                }
+        }
+    }
+
+    createRingExplosion(shape) {
+        const particleCount = 180;
         for (let i = 0; i < particleCount; i++) {
-            particles.push(new Particle(this.x, this.y, this.color, shape));
+            const angle = (i / particleCount) * Math.PI * 2;
+            const particle = new Particle(this.x, this.y, this.color, shape, FIREWORK_TYPES.RING);
+            particle.velocity.x = Math.cos(angle) * 8;
+            particle.velocity.y = Math.sin(angle) * 8;
+            particles.push(particle);
+        }
+    }
+
+    createSpiralExplosion() {
+        const particleCount = 100;
+        for (let i = 0; i < particleCount; i++) {
+            particles.push(new Particle(this.x, this.y, this.color, 'circle', FIREWORK_TYPES.SPIRAL));
+        }
+    }
+
+    createDoubleExplosion(shape) {
+        // 内圈
+        for (let i = 0; i < 50; i++) {
+            const particle = new Particle(this.x, this.y, this.color, shape, FIREWORK_TYPES.NORMAL);
+            particle.velocity.x *= 0.5;
+            particle.velocity.y *= 0.5;
+            particles.push(particle);
+        }
+        // 外圈
+        for (let i = 0; i < 100; i++) {
+            particles.push(new Particle(this.x, this.y, this.color, shape, FIREWORK_TYPES.NORMAL));
         }
     }
 }
@@ -271,9 +354,11 @@ function createFirework() {
     const x = Math.random() * canvas.width;
     const y = canvas.height;
     const targetX = Math.random() * canvas.width;
-    const targetY = canvas.height * 0.2 + Math.random() * (canvas.height * 0.5); // 调整爆炸高度范围
+    const targetY = canvas.height * 0.2 + Math.random() * (canvas.height * 0.5);
     const color = colors[Math.floor(Math.random() * colors.length)];
-    fireworks.push(new Firework(x, y, targetX, targetY, color));
+    const types = Object.values(FIREWORK_TYPES);
+    const type = types[Math.floor(Math.random() * types.length)];
+    fireworks.push(new Firework(x, y, targetX, targetY, color, type));
 }
 
 // 点击创建烟花
@@ -281,17 +366,19 @@ canvas.addEventListener('click', (e) => {
     const x = Math.random() * canvas.width;
     const y = canvas.height;
     const color = colors[Math.floor(Math.random() * colors.length)];
-    fireworks.push(new Firework(x, y, e.clientX, e.clientY, color));
+    const types = Object.values(FIREWORK_TYPES);
+    const type = types[Math.floor(Math.random() * types.length)];
+    fireworks.push(new Firework(x, y, e.clientX, e.clientY, color, type));
 });
 
 // 动画循环
 function animate() {
     requestAnimationFrame(animate);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'; // 增加拖尾效果
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // 随机创建新烟花
-    if (Math.random() < 0.05) { // 降低发射频率
+    if (Math.random() < 0.05) {
         createFirework();
     }
 
@@ -306,7 +393,8 @@ function animate() {
             firework.targetY - firework.y
         );
 
-        if (distance < 15) {
+        if (distance < 15 && !firework.hasExploded) {
+            firework.hasExploded = true;
             firework.explode();
             fireworks.splice(i, 1);
             continue;
